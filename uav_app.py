@@ -1,174 +1,186 @@
 import streamlit as st
-import folium
-from streamlit_folium import st_folium
-import random
+import plotly.graph_objects as go
 
-st.set_page_config(page_title="无人机航线规划仿真系统", layout="wide")
+from terrain import generate_terrain
+from drone import init_drone,move_drone
+from planner import astar
+from analysis import terrain_analysis
 
-st.title("低空无人机航线规划仿真系统 Demo")
+st.set_page_config(layout="wide")
 
-# -------------------------
-# 初始化状态
-# -------------------------
+st.title("无人机侦察与地形分析系统")
 
-if "lat" not in st.session_state:
-    st.session_state.lat = 39.90
+# ----------------
+# Session状态
+# ----------------
 
-if "lon" not in st.session_state:
-    st.session_state.lon = 116.40
+if "login" not in st.session_state:
+    st.session_state.login = False
+
+if "terrain" not in st.session_state:
+    st.session_state.terrain = None
 
 if "path" not in st.session_state:
-    st.session_state.path = [(st.session_state.lat, st.session_state.lon)]
+    st.session_state.path = []
 
-if "terrain_result" not in st.session_state:
-    st.session_state.terrain_result = "平原：适合低空飞行"
+# ----------------
+# 登录
+# ----------------
 
-# -------------------------
-# 地形分析函数
-# -------------------------
+with st.sidebar:
 
-def terrain_analysis(lat, lon):
+    st.header("操作员登录")
 
-    v = int((lat * 100 + lon * 100)) % 4
+    name = st.text_input("姓名")
 
-    if v == 0:
-        return "平原：适合低空飞行"
+    mission = st.text_input("任务")
 
-    elif v == 1:
-        return "丘陵：建议保持80m以上高度"
+    if st.button("进入系统"):
 
-    elif v == 2:
-        return "山地：建议绕行或升高飞行"
+        st.session_state.login = True
 
-    else:
-        return "河谷：可沿河谷低空巡航"
+        st.session_state.name = name
 
-# -------------------------
-# 无人机移动函数
-# -------------------------
+        st.session_state.mission = mission
 
-def move(dx, dy):
+if not st.session_state.login:
 
-    st.session_state.lat += dx
-    st.session_state.lon += dy
+    st.info("请输入操作员信息")
 
-    new_pos = (st.session_state.lat, st.session_state.lon)
+    st.stop()
 
-    st.session_state.path.append(new_pos)
+st.success(f"操作员 {st.session_state.name} 执行任务 {st.session_state.mission}")
 
-    st.session_state.terrain_result = terrain_analysis(
-        st.session_state.lat,
-        st.session_state.lon
-    )
+# ----------------
+# 地形生成
+# ----------------
 
-# -------------------------
-# 控制按钮
-# -------------------------
+if st.session_state.terrain is None:
+
+    st.session_state.terrain = generate_terrain()
+
+Z = st.session_state.terrain
+
+# ----------------
+# 无人机初始化
+# ----------------
+
+if "drone" not in st.session_state:
+
+    st.session_state.drone = init_drone(Z)
+
+pos = st.session_state.drone
+
+# ----------------
+# 控制区
+# ----------------
 
 st.subheader("无人机控制")
 
-col1, col2, col3 = st.columns(3)
+c1,c2,c3,c4 = st.columns(4)
 
-with col2:
-    st.button("⬆ 前进", on_click=move, args=(0.01, 0))
+with c1:
+    if st.button("前进"):
+        st.session_state.drone = move_drone("forward",Z)
 
-col4, col5, col6 = st.columns(3)
+with c2:
+    if st.button("后退"):
+        st.session_state.drone = move_drone("back",Z)
 
-with col4:
-    st.button("⬅ 左移", on_click=move, args=(0, -0.01))
+with c3:
+    if st.button("左"):
+        st.session_state.drone = move_drone("left",Z)
 
-with col5:
-    st.button("⬇ 后退", on_click=move, args=(-0.01, 0))
+with c4:
+    if st.button("右"):
+        st.session_state.drone = move_drone("right",Z)
 
-with col6:
-    st.button("➡ 右移", on_click=move, args=(0, 0.01))
+pos = st.session_state.drone
 
-# -------------------------
-# 显示无人机坐标
-# -------------------------
+st.session_state.path.append(pos)
 
-st.write(
-    "当前无人机坐标：",
-    round(st.session_state.lat, 4),
-    round(st.session_state.lon, 4)
+# ----------------
+# 自动航线规划
+# ----------------
+
+st.subheader("自动航线规划")
+
+goal_x = st.slider("目标X",0,Z.shape[0]-1,40)
+
+goal_y = st.slider("目标Y",0,Z.shape[1]-1,40)
+
+if st.button("自动规划"):
+
+    start = (int(pos[0]),int(pos[1]))
+
+    goal = (goal_x,goal_y)
+
+    route = astar(Z,start,goal)
+
+    st.session_state.path = []
+
+    for r in route:
+
+        st.session_state.path.append([r[0],r[1],Z[r[0]][r[1]]+20])
+
+# ----------------
+# 3D显示
+# ----------------
+
+fig = go.Figure()
+
+fig.add_trace(go.Surface(z=Z,colorscale="Viridis",opacity=0.8))
+
+fig.add_trace(go.Scatter3d(
+
+    x=[p[0] for p in st.session_state.path],
+
+    y=[p[1] for p in st.session_state.path],
+
+    z=[p[2] for p in st.session_state.path],
+
+    mode="lines",
+
+    line=dict(width=6,color="red"),
+
+    name="Flight Path"
+
+))
+
+fig.add_trace(go.Scatter3d(
+
+    x=[pos[0]],
+
+    y=[pos[1]],
+
+    z=[pos[2]],
+
+    mode="markers",
+
+    marker=dict(size=8,color="yellow"),
+
+    name="Drone"
+
+))
+
+fig.update_layout(
+
+    scene=dict(
+
+        xaxis_title="X",
+
+        yaxis_title="Y",
+
+        zaxis_title="Height"
+
+    )
+
 )
 
-# -------------------------
-# 地图绘制
-# -------------------------
+st.plotly_chart(fig,use_container_width=True)
 
-m = folium.Map(
-    location=[st.session_state.lat, st.session_state.lon],
-    zoom_start=12
-)
+# ----------------
+# 地形分析
+# ----------------
 
-# 无人机位置
-
-folium.Marker(
-    [st.session_state.lat, st.session_state.lon],
-    tooltip="无人机",
-    icon=folium.Icon(color="red", icon="plane")
-).add_to(m)
-
-# 飞行轨迹
-
-folium.PolyLine(
-    st.session_state.path,
-    color="blue",
-    weight=3
-).add_to(m)
-
-st.subheader("飞行地图")
-
-st_folium(
-    m,
-    width=900,
-    height=500
-)
-
-# -------------------------
-# 地形分析结果
-# -------------------------
-
-st.subheader("地形分析结果")
-
-st.write(st.session_state.terrain_result)
-
-# -------------------------
-# 飞行任务总结
-# -------------------------
-
-st.subheader("飞行任务统计")
-
-st.write("飞行步数：", len(st.session_state.path))
-
-st.write("当前飞行区域分析：")
-
-if "山地" in st.session_state.terrain_result:
-
-    st.warning("⚠ 当前区域为山地，建议提高飞行高度")
-
-elif "丘陵" in st.session_state.terrain_result:
-
-    st.info("注意坡度变化，建议保持稳定高度")
-
-elif "河谷" in st.session_state.terrain_result:
-
-    st.success("河谷区域适合巡航")
-
-else:
-
-    st.success("当前区域适合低空飞行")
-
-# -------------------------
-# 重置按钮
-# -------------------------
-
-if st.button("重置飞行任务"):
-
-    st.session_state.lat = 39.90
-    st.session_state.lon = 116.40
-    st.session_state.path = [(39.90,116.40)]
-    st.session_state.terrain_result = "平原：适合低空飞行"
-
-    st.rerun()
+terrain_analysis(Z,pos)
