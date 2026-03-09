@@ -2,32 +2,28 @@ import streamlit as st
 
 def init_drone(Z):
 
-    x = 40
-    y = 40
-    z = Z[x][y] + 2
+    x = Z.shape[0]//2
+    y = Z.shape[1]//2
+    z = Z[x][y] + 20
 
     return [x,y,z]
 
-
 def move_drone(direction,Z):
 
-    drone = st.session_state.drone
+    x,y,z = st.session_state.drone
 
     if direction == "forward":
-        drone[0] +=1
+        x = min(x+1,Z.shape[0]-1)
 
     if direction == "back":
-        drone[0] -=1
+        x = max(x-1,0)
 
     if direction == "left":
-        drone[1] -=1
+        y = max(y-1,0)
 
     if direction == "right":
-        drone[1] +=1
+        y = min(y+1,Z.shape[1]-1)
 
-    x = int(drone[0])
-    y = int(drone[1])
+    z = Z[x][y] + 20
 
-    drone[2] = Z[x][y] + 2
-
-    st.session_state.drone = drone
+    return [x,y,z]
