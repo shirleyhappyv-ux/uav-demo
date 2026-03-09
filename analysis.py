@@ -3,24 +3,28 @@ import numpy as np
 
 def terrain_analysis(Z,pos):
 
-    st.subheader("地形分析")
+    x,y,z = pos
 
-    dzdx,dzdy = np.gradient(Z)
+    h = Z[int(x)][int(y)]
 
-    slope = np.sqrt(dzdx**2 + dzdy**2)
+    slope = np.gradient(Z)[0][int(x)][int(y)]
 
-    avg_height = np.mean(Z)
-    max_height = np.max(Z)
+    st.subheader("地形分析报告")
 
-    x = int(pos[0])
-    y = int(pos[1])
+    st.write("地面高度:",round(h,2))
 
-    st.write("平均高度:",round(avg_height,2))
-    st.write("最大高度:",round(max_height,2))
-    st.write("当前位置坡度:",round(slope[x][y],3))
+    st.write("无人机高度:",round(z,2))
 
-    if slope[x][y] > 1.5:
-        st.warning("地形坡度较大，飞行风险高")
+    st.write("坡度:",round(abs(slope),2))
+
+    if h > 70:
+
+        st.warning("山地区域，建议提升高度")
+
+    elif abs(slope) > 3:
+
+        st.info("丘陵区域，注意地形变化")
 
     else:
-        st.success("地形适合飞行")
+
+        st.success("平原区域，适合低空飞行")
